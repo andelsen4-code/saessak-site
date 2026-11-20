@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>새싹 공방 · 문의함</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+  :root{--ink:#080D0B;--card:#141C18;--paper:#F2F0EA;--dim:#F2F0EAA6;--rule:#F2F0EA1F;--sprout:#9DB98A;--dark:#0E1311}
+  *{box-sizing:border-box;margin:0;padding:0}
+  [hidden]{display:none!important}
+  body{background:var(--ink);color:var(--paper);font:400 16px/1.6 "Pretendard",system-ui,sans-serif;word-break:keep-all;-webkit-font-smoothing:antialiased}
+  :focus-visible{outline:2px solid var(--sprout);outline-offset:2px}
+  .wrap{width:min(760px,100% - 32px);margin:0 auto;padding:40px 0 80px}
+  h1{font-size:20px;font-weight:600;margin-bottom:24px}
+  form{display:grid;gap:12px;max-width:360px}
+  input{font:inherit;font-size:17px;padding:14px 16px;border-radius:12px;border:1px solid var(--rule);background:var(--card);color:var(--paper)}
+  button{font:inherit;cursor:pointer;border-radius:100px;border:1px solid var(--rule);background:none;color:var(--paper);padding:12px 18px;min-height:44px}
+  .primary{background:var(--paper);color:var(--dark);border:0;font-weight:600}
+  .err{color:#E8A08F;min-height:1.6em}
+  .count{display:flex;align-items:baseline;gap:12px;margin-bottom:28px}
+  .count b{font-size:56px;font-weight:600;line-height:1}
+  .count span{color:var(--dim)}
+  .top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:20px}
+  .list{display:grid;gap:12px}
+  .item{background:var(--card);border-radius:20px;padding:20px;display:grid;gap:10px}
+  .item.new{box-shadow:inset 3px 0 0 var(--sprout)}
+  .meta{color:var(--dim);font-size:14px}
+  .name{font-size:18px;font-weight:600}
+  .contact{justify-self:start;padding:6px 0;border:0;border-radius:0;text-decoration:underline;text-underline-offset:3px;min-height:0}
+  .msg{white-space:pre-wrap}
+  .st{display:flex;gap:8px;flex-wrap:wrap}
+  .st button[aria-pressed=true]{background:var(--paper);color:var(--dark);border-color:var(--paper);font-weight:600}
+  .empty{color:var(--dim);padding:40px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>새싹 공방 문의함</h1>
+
+  <form id="login">
+    <input id="pw" type="password" autocomplete="current-password" placeholder="관리자 비밀번호" aria-label="관리자 비밀번호" required>
+    <button class="primary" type="submit">들어가기</button>
+    <p class="err" id="loginErr" role="alert"></p>
+  </form>
+
+  <div id="board" hidden>
+    <div class="count"><b id="newCount">0</b><span>건의 새 문의</span></div>
+    <div class="top"><span class="meta" id="total"></span><button id="reload" type="button">새로고침</button></div>
+    <p class="err" id="boardErr" role="alert"></p>
+    <div class="list" id="list"></div>
+  </div>
+</div>
+<script>
+  const STATUSES = ['새 문의', '연락함', '완료'];
+  const $ = (id) => document.getElementById(id);
+  const getPw = () => { try { return sessionStorage.getItem('adminPw') || ''; } catch { return ''; } };
+  const setPw = (v) => { try { v ? sessionStorage.setItem('adminPw', v) : sessionStorage.removeItem('adminPw'); } catch {} };
+
+  async function api(method, body) {
+    const r = await fetch('/api/admin', { method, headers: { 'x-admin-password': getPw(), 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 401) { setPw(''); showLogin(d.error || '비밀번호가 맞지 않아요.'); throw new Error('401'); }
+    if (!r.ok) throw new Error(d.error || '불러오지 못했어요.');
+    return d;
+  }
+  function showLogin(msg) { $('board').hidden = true; $('login').hidden = false; $('loginErr').textContent = msg || ''; $('pw').value = ''; $('pw').focus(); }
+  const fmt = (s) => new Date(s).toLocaleString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit' });
+
+  async function load() {
+    $('boardErr').textContent = '';
+    let d; try { d = await api('GET'); } catch (e) { if (e.message !== '401') $('boardErr').textContent = e.message; return; }
+    $('login').hidden = true; $('board').hidden = false;
+    const rows = d.rows || [];
+    $('newCount').textContent = rows.filter(r => r.status === '새 문의').length;
+    $('total').textContent = `전체 ${rows.length}건 · 최신순`;
+    const list = $('list'); list.replaceChildren();
+    if (!rows.length) { const p = document.createElement('p'); p.className = 'empty'; p.textContent = '아직 들어온 문의가 없어요. 사이트의 예약 문의 폼으로 들어오면 여기에 보여요.'; list.append(p); return; }
+    for (const r of rows) {
+      const el = document.createElement('article'); el.className = 'item' + (r.status === '새 문의' ? ' new' : '');
+      const meta = document.createElement('div'); meta.className = 'meta'; meta.textContent = fmt(r.created_at);
+      const name = document.createElement('div'); name.className = 'name'; name.textContent = r.name;
+      const c = document.createElement('button'); c.type = 'button'; c.className = 'contact'; c.textContent = r.contact; c.title = '눌러서 복사';
+      c.onclick = async () => { try { await navigator.clipboard.writeText(r.contact); c.textContent = '복사했어요'; setTimeout(() => c.textContent = r.contact, 1200); } catch { const s = getSelection(); const rg = document.createRange(); rg.selectNodeContents(c); s.removeAllRanges(); s.addRange(rg); } };
+      const m = document.createElement('div'); m.className = 'msg'; m.textContent = r.message || '';
+      const st = document.createElement('div'); st.className = 'st';
+      for (const s of STATUSES) {
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = s; b.setAttribute('aria-pressed', String(r.status === s));
+        b.onclick = async () => { if (r.status === s) return; try { await api('PATCH', { id: r.id, status: s }); load(); } catch (e) { if (e.message !== '401') $('boardErr').textContent = e.message; } };
+        st.append(b);
+      }
+      el.append(meta, name, c, m, st); list.append(el);
+    }
+  }
+  $('login').addEventListener('submit', (e) => { e.preventDefault(); setPw($('pw').value); load(); });
+  $('reload').onclick = load;
+  if (getPw()) load(); else $('pw').focus();
+</script>
+</body>
+</html>
